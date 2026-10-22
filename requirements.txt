@@ -8,3 +8,7 @@ langchain-groq
 langchain_tavily
 langgraph-cli[inmem]
 pytest
+chromadb 
+sentence-transformers 
+pymupdf 
+langchain-text-splitters

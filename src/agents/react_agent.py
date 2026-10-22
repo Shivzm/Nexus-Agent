@@ -10,7 +10,7 @@ from langchain_core.messages import HumanMessage
 
 from src.agents.base import AgentState, get_llm, get_memory_checkpointer, get_react_model
 from config.settings import settings
-from tools import search_web, multiply
+from tools import search_web, multiply, search_documents
 
 
 def build_react_agent(model: str | None = None, checkpointer=None):
@@ -27,7 +27,7 @@ def build_react_agent(model: str | None = None, checkpointer=None):
         model = settings.default_model
     
     llm = get_llm(get_react_model())
-    tools = [search_web, multiply]
+    tools = [search_web, multiply, search_documents]
     llm_with_tools = llm.bind_tools(tools)
 
     def call_model(state: AgentState):

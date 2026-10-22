@@ -17,6 +17,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.tools import tool
+from src.agents import multi_agent_supervisor as sup
 
 from src.agents.multi_agent_supervisor import (
     SupervisorState,
@@ -65,6 +67,10 @@ def mock_llm(response_text: str) -> MagicMock:
     llm.__or__ = MagicMock(return_value=chain_mock)
     return llm
 
+@tool
+def fake_search(query: str) -> str:
+    """fake"""
+    return f"[doc.pdf, p.1] hit for {query}"
 
 # ============================================================
 # SupervisorState
@@ -228,6 +234,19 @@ class TestResearcherAgent:
         # Should not raise; uses fallback text
         result = researcher_agent(state, llm)
         assert "research_data" in result
+
+    def test_researcher_executes_tool_calls_then_answers():
+        call = AIMessage(content="", tool_calls=[{"name": "fake_search", "args": {"query": "x"}, "id": "1"}])
+        llm = MagicMock()
+        llm.bind_tools.return_value = llm
+        llm.invoke.side_effect = [call, AIMessage(content="Findings [doc.pdf p.1]")]
+
+        with patch.object(sup, "RESEARCH_TOOLS", [fake_search]):
+            result = sup.researcher_agent(make_state(current_task="x"), llm)
+
+        assert result["research_data"] == "Findings [doc.pdf p.1]"
+        tool_msgs = [m for m in llm.invoke.call_args[0][0] if m.type == "tool"]
+        assert "doc.pdf" in tool_msgs[0].content
 
 
 # ============================================================

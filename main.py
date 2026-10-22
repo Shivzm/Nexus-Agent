@@ -14,6 +14,7 @@ from src.agents import (
     chatbot_graph,
     human_in_loop_graph,
     build_multi_agent_graph,
+    build_supervisor_graph,
 )
 from src.agents.base import get_memory_checkpointer
 
@@ -29,7 +30,7 @@ def build_agent(agent_type: str, model: str | None = None, checkpointer=None):
     """Build the specified agent graph.
     
     Args:
-        agent_type: Type of agent ("react", "chatbot", "human_in_loop", "multi").
+        agent_type: Type of agent ("react", "chatbot", "human_in_loop", "multi", "supervisor").
         model: Optional model override.
         checkpointer: Optional state persister.
     
@@ -47,6 +48,7 @@ def build_agent(agent_type: str, model: str | None = None, checkpointer=None):
         "chatbot": chatbot_graph,
         "human_in_loop": human_in_loop_graph,
         "multi": build_multi_agent_graph,
+        "supervisor": build_supervisor_graph,
     }
     
     if agent_type not in builders:
@@ -69,7 +71,7 @@ def main():
     )
     parser.add_argument(
         "--agent",
-        choices=["react", "chatbot", "human_in_loop", "multi"],
+        choices=["react", "chatbot", "human_in_loop", "multi", "supervisor"],
         default="react",
         help="Type of agent to run"
     )

@@ -6,11 +6,11 @@ and writers summarize findings.
 
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, END, MessagesState
-from langgraph.prebuilt import ToolNode
+from langgraph.prebuilt import ToolNode, tools_condition
 
 from src.agents.base import get_llm, get_memory_checkpointer
 from config.settings import settings
-from tools import search_web, write_summary
+from tools import search_web, write_summary, search_documents
 
 
 def build_multi_agent_graph(model: str | None = None, checkpointer=None):
@@ -28,14 +28,19 @@ def build_multi_agent_graph(model: str | None = None, checkpointer=None):
     
     llm = get_llm(model)
 
+    research_tools = [search_documents, search_web]
+    researcher_llm = llm.bind_tools(research_tools)
+
     def researcher_agent(state: MessagesState):
-        """Researcher agent that searches for information."""
-        messages = state["messages"]
         system_msg = SystemMessage(
-            content="You are a research assistant. Use the search_web tool to find information about the user's request"
+            content=(
+                "You are a research assistant. Use search_documents for questions about "
+                "the user's own documents and search_web for current events or anything "
+                "outside them. Call a tool before answering, then give your findings and "
+                "cite the sources the tools return (file and page, or URL)."
+            )
         )
-        researcher_llm = llm.bind_tools([search_web])
-        response = researcher_llm.invoke([system_msg] + messages)
+        response = researcher_llm.invoke([system_msg] + state["messages"])
         return {"messages": [response]}
 
     def writer_agent(state: MessagesState):
@@ -52,11 +57,14 @@ def build_multi_agent_graph(model: str | None = None, checkpointer=None):
     
     # Add nodes
     workflow.add_node("researcher", researcher_agent)
+    workflow.add_node("research_tools", ToolNode(research_tools))   # NEW
     workflow.add_node("writer", writer_agent)
-    
-    # Define flow
+
     workflow.set_entry_point("researcher")
-    workflow.add_edge("researcher", "writer")
+    workflow.add_conditional_edges(                                  # replaces add_edge("researcher", "writer")
+        "researcher", tools_condition, {"tools": "research_tools", END: "writer"}
+    )
+    workflow.add_edge("research_tools", "researcher")                # NEW
     workflow.add_edge("writer", END)
     
     if checkpointer is None:

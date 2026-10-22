@@ -23,7 +23,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from src.agents.base import get_llm, get_memory_checkpointer
 from config.settings import settings
-from tools import search_web, write_summary
+from tools import search_documents, search_web, write_summary
 
 
 # ============================================================
@@ -114,19 +114,19 @@ def supervisor_agent(state: SupervisorState, llm) -> Dict:
     # Map LLM decision → internal routing token
     if "done" in decision_text or has_report:
         next_agent    = "end"
-        status_msg    = "✅ Supervisor: All tasks complete!"
+        status_msg    = " Supervisor: All tasks complete!"
     elif "researcher" in decision_text or not has_research:
         next_agent    = "researcher"
-        status_msg    = "📋 Supervisor: Starting research phase…"
+        status_msg    = " Supervisor: Starting research phase…"
     elif "analyst" in decision_text or (has_research and not has_analysis):
         next_agent    = "analyst"
-        status_msg    = "📋 Supervisor: Research done — moving to analysis…"
+        status_msg    = " Supervisor: Research done — moving to analysis…"
     elif "writer" in decision_text or (has_analysis and not has_report):
         next_agent    = "writer"
-        status_msg    = "📋 Supervisor: Analysis done — generating report…"
+        status_msg    = " Supervisor: Analysis done — generating report…"
     else:
         next_agent    = "end"
-        status_msg    = "✅ Supervisor: Task appears complete."
+        status_msg    = " Supervisor: Task appears complete."
 
     return {
         "messages":     [AIMessage(content=status_msg)],
@@ -139,43 +139,65 @@ def supervisor_agent(state: SupervisorState, llm) -> Dict:
 # Researcher
 # ============================================================
 
+RESEARCH_TOOLS = [search_documents, search_web]
+MAX_TOOL_ROUNDS = 4
+
+
+def _run_tool_call(call: dict) -> ToolMessage:
+    """Execute one tool call and always return a ToolMessage (errors included)."""
+    tools_by_name = {t.name: t for t in RESEARCH_TOOLS}
+    tool = tools_by_name.get(call["name"])
+    if tool is None:
+        return ToolMessage(content=f"Unknown tool: {call['name']}",
+                           tool_call_id=call["id"], name=call["name"])
+    try:
+        return tool.invoke(call)
+    except Exception as exc:  # keep the loop alive; the LLM can read the error
+        return ToolMessage(content=f"Tool error: {exc}",
+                           tool_call_id=call["id"], name=call["name"])
+
+
 def researcher_agent(state: SupervisorState, llm) -> Dict:
-    """Gathers comprehensive information on the current task using the LLM.
-
-    Produces structured research covering background, trends, statistics,
-    and case studies.  Stores the full response in ``research_data`` and
-    routes back to the supervisor.
-
-    Args:
-        state: Current supervisor workflow state.
-        llm:   Instantiated chat model.
-
-    Returns:
-        State delta with ``research_data`` populated.
-    """
-
     task = state.get("current_task", "the requested topic")
 
-    prompt = f"""You are a research specialist. Provide comprehensive information about:
+    prompt = f"""You are a research specialist. Research the following topic:
 
 {task}
 
-Structure your response with:
+Tools:
+- search_documents: the user's own indexed documents (PDFs, text files)
+- search_web: current information from the internet
+
+Call the tools you need, then write structured findings covering:
 1. Key facts and background
 2. Current trends and recent developments
 3. Important statistics or data points
 4. Notable examples or case studies
 
-Be thorough yet concise."""
+Cite the sources the tools return (file and page, or URL). If the tools return
+nothing useful, say so instead of guessing. Be thorough yet concise."""
 
-    response      = llm.invoke([HumanMessage(content=prompt)])
-    research_data = response.content
+    llm_with_tools = llm.bind_tools(RESEARCH_TOOLS)
+    messages = [HumanMessage(content=prompt)]
+    response = llm_with_tools.invoke(messages)
+
+    for _ in range(MAX_TOOL_ROUNDS):
+        if not response.tool_calls:
+            break
+        messages.append(response)
+        messages.extend(_run_tool_call(call) for call in response.tool_calls)
+        response = llm_with_tools.invoke(messages)
+
+    if response.tool_calls:  # round budget used up: force a written answer
+        messages.append(HumanMessage(content="Do not call more tools. Write your findings now."))
+        response = llm_with_tools.invoke(messages)
+
+    research_data = response.content or "No findings were produced."
 
     agent_msg = (
         f"🔍 Researcher: Research on '{task}' complete.\n\n"
         f"Preview:\n{research_data[:400]}…"
     )
-
     return {
         "messages":      [AIMessage(content=agent_msg)],
         "research_data": research_data,
