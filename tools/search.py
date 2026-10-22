@@ -5,12 +5,18 @@ Provides tools for web search and content summarization.
 
 from langchain_core.tools import tool
 from langchain_community.tools.tavily_search import TavilySearchResults
+from functools import lru_cache
 
+from langchain_core.tools import tool
+from langchain_community.tools.tavily_search import TavilySearchResults
 
 # Initialize Tavily search once (singleton pattern)
-_tavily_search = TavilySearchResults(max_results=3)
 _summary_length = 500
 
+@lru_cache(maxsize=1)
+def _get_tavily() -> TavilySearchResults:
+    """Create the Tavily client on first use (needs TAVILY_API_KEY)."""
+    return TavilySearchResults(max_results=3)
 
 @tool
 def search_web(query: str) -> str:
@@ -29,7 +35,7 @@ def search_web(query: str) -> str:
         Exception: If the search fails or returns no results.
     """
     try:
-        results = _tavily_search.invoke(query)
+        results = _get_tavily().invoke(query)
         if not results:
             return "No results found for the query."
         return str(results)

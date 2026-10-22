@@ -12,3 +12,4 @@ chromadb
 sentence-transformers 
 pymupdf 
 langchain-text-splitters
+pydantic-settings

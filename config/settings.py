@@ -1,5 +1,10 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
 
+from dotenv import load_dotenv
+
+ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(ENV_FILE)  # put .env keys into os.environ so LangChain can see them
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
