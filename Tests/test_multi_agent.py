@@ -26,7 +26,7 @@ class TestMultiAgentGraph:
     
     def test_graph_builds_with_custom_model(self):
         """Test graph building with custom model specification."""
-        graph = build_multi_agent_graph(model="groq:llama-3.1-8b-instant")
+        graph = build_multi_agent_graph(model="groq:openai/gpt-oss-20b")
         assert graph is not None
     
     def test_graph_builds_with_checkpointer(self):

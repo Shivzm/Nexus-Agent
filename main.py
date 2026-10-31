@@ -11,8 +11,8 @@ from langchain_core.runnables.config import RunnableConfig
 
 from src.agents import (
     build_react_agent,
-    chatbot_graph,
-    human_in_loop_graph,
+    build_chatbot_graph,
+    build_human_in_loop_graph,
     build_multi_agent_graph,
     build_supervisor_graph,
 )
@@ -43,10 +43,10 @@ def build_agent(agent_type: str, model: str | None = None, checkpointer=None):
     if checkpointer is None:
         checkpointer = get_memory_checkpointer()
     
-    builders = {
+        builders = {
         "react": build_react_agent,
-        "chatbot": chatbot_graph,
-        "human_in_loop": human_in_loop_graph,
+        "chatbot": build_chatbot_graph,
+        "human_in_loop": build_human_in_loop_graph,
         "multi": build_multi_agent_graph,
         "supervisor": build_supervisor_graph,
     }
@@ -120,6 +120,11 @@ def main():
                 )
                 
                 agent_response = response["messages"][-1].content
+                msgs = response["messages"]
+                last_human = max(i for i, m in enumerate(msgs) if m.type == "human")
+                tools_used = [m.name for m in msgs[last_human + 1:] if m.type == "tool"]
+                if tools_used:
+                    print(f"[tools used: {', '.join(tools_used)}]")
                 print(f"\nAgent: {agent_response}\n")
                 logger.debug(f"Agent response length: {len(agent_response)}")
                 

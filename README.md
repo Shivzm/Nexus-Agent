@@ -59,6 +59,20 @@ data/docs/                your documents (not committed)
 data/chroma/              the vector database (generated, not committed)
 ```
 
+## Issues Faced
+
+Our question was fine. The request was too big for your Groq limit.
+
+What happened ?
+
+Groq returned a 413 saying the request was 8,105 tokens against a limit of 8,000 tokens per minute for openai/gpt-oss-120b. That limit applies to your organization on Groq’s free tier. The agent re-sends the entire conversation on every call, and thread 1 still held your first question and its answer, the passages from all three search_documents calls, and now the new web results. Every question makes the next one bigger.
+
+Solution ?
+
+Drop old tool output from the prompt
+
+Old retrieved passages and web results are bulky, and the model doesn’t need them again once it has answered.
+
 ## Results
 
 Measured on a fixed, hand-reviewed question set over the corpus in `data/docs/`. Each row changes one thing.

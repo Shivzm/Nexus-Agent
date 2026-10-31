@@ -16,7 +16,7 @@ Unlike the linear multi_agent.py, this pattern allows the supervisor to:
 from typing import Dict, Hashable, Literal
 from datetime import datetime
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END, MessagesState
 from langgraph.checkpoint.memory import MemorySaver

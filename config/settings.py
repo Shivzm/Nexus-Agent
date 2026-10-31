@@ -9,9 +9,9 @@ load_dotenv(ENV_FILE)  # put .env keys into os.environ so LangChain can see them
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    default_model: str = "groq:llama-3.3-70b-versatile"
-    chatbot_model: str = "groq:llama-3.1-8b-instant"
-    react_model: str = "groq:llama-3.3-70b-versatile"
+    default_model: str = "groq:openai/gpt-oss-120b"
+    chatbot_model: str = "groq:openai/gpt-oss-20b"
+    react_model: str = "groq:openai/gpt-oss-120b"
 
     # RAG
     rag_docs_dir: str = "data/docs"

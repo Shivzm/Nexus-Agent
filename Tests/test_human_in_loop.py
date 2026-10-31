@@ -33,7 +33,7 @@ class TestHumanInLoopGraph:
     
     def test_graph_builds_with_custom_model(self):
         """Test graph building with custom model specification."""
-        graph = build_human_in_loop_graph(model="groq:llama-3.3-70b-versatile")
+        graph = build_human_in_loop_graph(model="groq:openai/gpt-oss-120b")
         assert graph is not None
     
     def test_graph_builds_with_checkpointer(self):

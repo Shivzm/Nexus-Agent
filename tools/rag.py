@@ -5,9 +5,9 @@ from src.rag.retriever import retrieve
 
 @tool
 def search_documents(query: str) -> str:
-    """Search the user's indexed documents (PDFs and text files) and return
-    relevant passages with their source file and page. Use this for questions
-    about the user's own documents; use search_web for current events."""
+    """Search the private knowledge base of research papers (RAG, retrieval, LLM
+    agents, language models). Returns the most relevant passages with file name
+    and page. Use this first for questions about these topics."""
     hits = retrieve(query)
     if not hits:
         return "No relevant passages found in the indexed documents."
