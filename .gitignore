@@ -44,3 +44,8 @@ logs/
 *.tmp
 tmp/
 
+# RAG artifacts
+data/chroma/
+data/docs/*
+!data/docs/.gitkeep
+.venv-eval/
