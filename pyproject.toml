@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "chromadb>=1.5.9",
+    "fastapi>=0.115.0",
     "ipykernel>=7.1.0",
     "langchain>=1.1.2",
     "langchain-community>=0.4.1",
@@ -13,6 +14,7 @@ dependencies = [
     "langchain-tavily>=0.2.17",
     "langchain-text-splitters>=1.1.0",
     "langgraph>=1.0.4",
+    "langgraph-checkpoint-sqlite>=2.0.0",
     "langgraph-cli[inmem]>=0.4.15",
     "langsmith>=0.4.56",
     "pydantic-settings>=2.13.1",
@@ -21,4 +23,5 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "rank-bm25>=0.2.2",
     "sentence-transformers>=6.2.0",
+    "uvicorn[standard]>=0.34.0",
 ]

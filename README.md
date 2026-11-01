@@ -161,6 +161,26 @@ uv run python -m evals.report_traces --project nexus-agent --hours 24
 
 The script writes JSON and CSV reports under `evals/results/`. It uses provider-reported LangSmith costs when available. If traces have no cost fields, pass both `--input-usd-per-million` and `--output-usd-per-million` to estimate model cost from token usage using your provider's current rates; cost is marked unavailable otherwise. The report's cost coverage shows which model calls had a cost. Run `uv run python -m evals.report_traces --help` for filters and options.
 
+## API and Docker
+
+The FastAPI service exposes `/chat` for JSON responses, `/chat/stream` for server-sent events, and `/health` for liveness checks. Responses include document sources as `{source, page}` records. Conversation state is persisted in SQLite using the request's `thread_id`.
+
+```powershell
+copy .env.example .env   # set GROQ_API_KEY and TAVILY_API_KEY
+# put your corpus under data/docs/ and ingest it first
+docker compose up --build
+```
+
+The Compose setup binds to `127.0.0.1:8000` and mounts `data/`, which persists both `data/chroma/` and `data/api_checkpoints.sqlite`. Test a streaming response with:
+
+```powershell
+curl.exe -N -X POST http://127.0.0.1:8000/chat/stream `
+  -H "Content-Type: application/json" `
+  -d "{\"thread_id\":\"demo\",\"question\":\"Summarize my documents about RAG.\"}"
+```
+
+For any non-local deployment, set `API_BEARER_TOKEN` in `.env`, use HTTPS behind a trusted reverse proxy, and restrict access to the SQLite and Chroma data. Traces and request data may contain sensitive content; keep LangSmith tracing disabled unless that data may be sent there.
+
 ## Roadmap
 
 - [x] RAG pipeline on ChromaDB
@@ -172,7 +192,7 @@ The script writes JSON and CSV reports under `evals/results/`. It uses provider-
 - [x] Agentic retrieval: grade context, rewrite query, retry or fall back to web search
 - [x] Agent-level tool-selection and task-success evaluation
 - [x] Opt-in LangSmith tracing and latency/token/cost reports by query and node
-- [ ] FastAPI service, Docker, persistent checkpointer
+- [x] FastAPI service, Docker, persistent SQLite checkpointer
 - [ ] Semantic cache and load test
 - [ ] CI check that fails when retrieval quality drops
 
