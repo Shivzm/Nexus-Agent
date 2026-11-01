@@ -137,14 +137,28 @@ uv run python -m evals.run_eval --config hybrid_rerank --count 30 --max-workers 
 
 Document-tool calls now grade retrieved passages, retry once with a rewritten query when evidence is weak, and use web search if the retry is still weak. Set `RAG_AGENTIC_MAX_REWRITES` to change the retry limit (default: `1`). The web fallback is clearly labelled in the tool result.
 
+## Evaluating agent tool selection
+
+`evals/agent_dataset.jsonl` contains labeled document, web, and arithmetic questions. Run the ReAct agent and its task-success judge against this set:
+
+```powershell
+uv run python -m evals.run_agent_eval
+```
+
+The report includes first-tool selection accuracy and LLM-judged end-to-end task-success rate, overall and by category, plus per-question CSV/JSON details. The judge scores answer quality independently of whether the agent chose the expected tool. Use `--model groq:openai/gpt-oss-20b` or `AGENT_EVAL_MODEL` to select the model. This small, manually labeled set is a smoke benchmark; review its cases and judge explanations before drawing broad conclusions.
+
+The initial nine-case run reported 66.7% first-tool accuracy and 100% LLM-judged task success. This was before the routing-prompt and freshness-rubric improvements in the current code; the follow-up run hit Groq's daily token limit, so these numbers are a preliminary baseline, not a result for the current prompt.
+
 ## Roadmap
 
 - [x] RAG pipeline on ChromaDB
 - [x] RAG tool wired into the agents, with tool loops in the multi-agent graphs
-- [ ] Hand-reviewed evaluation set and local LangSmith baseline
+- [x] Hand-reviewed evaluation set
+- [ ] Separate Ragas baseline (a custom local LangSmith baseline exists)
 - [x] Hybrid search (BM25 + dense, RRF)
 - [ ] Cross-encoder reranking benchmark (implementation available as `hybrid_rerank`)
 - [x] Agentic retrieval: grade context, rewrite query, retry or fall back to web search
+- [x] Agent-level tool-selection and task-success evaluation
 - [ ] LangSmith tracing, latency and cost per query
 - [ ] FastAPI service, Docker, persistent checkpointer
 - [ ] Semantic cache and load test
