@@ -149,6 +149,18 @@ The report includes first-tool selection accuracy and LLM-judged end-to-end task
 
 The initial nine-case run reported 66.7% first-tool accuracy and 100% LLM-judged task success. This was before the routing-prompt and freshness-rubric improvements in the current code; the follow-up run hit Groq's daily token limit, so these numbers are a preliminary baseline, not a result for the current prompt.
 
+## LangSmith tracing and observability
+
+Tracing is opt-in. Set `LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY`, and `LANGSMITH_PROJECT=nexus-agent` in `.env`, then run normal agent queries or `uv run python -m evals.run_agent_eval` to create traces. **Traces can contain user prompts, model outputs, and tool results; only enable tracing for data you are permitted to send to LangSmith.**
+
+Report recent per-query and per-node latency and token usage:
+
+```powershell
+uv run python -m evals.report_traces --project nexus-agent --hours 24
+```
+
+The script writes JSON and CSV reports under `evals/results/`. It uses provider-reported LangSmith costs when available. If traces have no cost fields, pass both `--input-usd-per-million` and `--output-usd-per-million` to estimate model cost from token usage using your provider's current rates; cost is marked unavailable otherwise. The report's cost coverage shows which model calls had a cost. Run `uv run python -m evals.report_traces --help` for filters and options.
+
 ## Roadmap
 
 - [x] RAG pipeline on ChromaDB
@@ -159,7 +171,7 @@ The initial nine-case run reported 66.7% first-tool accuracy and 100% LLM-judged
 - [ ] Cross-encoder reranking benchmark (implementation available as `hybrid_rerank`)
 - [x] Agentic retrieval: grade context, rewrite query, retry or fall back to web search
 - [x] Agent-level tool-selection and task-success evaluation
-- [ ] LangSmith tracing, latency and cost per query
+- [x] Opt-in LangSmith tracing and latency/token/cost reports by query and node
 - [ ] FastAPI service, Docker, persistent checkpointer
 - [ ] Semantic cache and load test
 - [ ] CI check that fails when retrieval quality drops
