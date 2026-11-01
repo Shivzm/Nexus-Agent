@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     rag_rrf_k: int = 60
     rag_reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     rag_reranker_candidate_k: int = 20
+    rag_agentic_max_rewrites: int = 1
 
 
 settings = Settings()

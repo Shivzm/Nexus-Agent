@@ -153,3 +153,41 @@ def test_retrieve_finds_relevant_chunk(tmp_path, monkeypatch):
     index_documents(load_documents())
     hits = retrieve("Where is the Eiffel Tower?", top_k=1)
     assert "Paris" in hits[0]["content"]
+
+
+def test_search_documents_returns_graded_document_results(monkeypatch):
+    from tools import rag
+
+    class FakeGraph:
+        def invoke(self, state):
+            assert state == {"question": "Where is the answer?", "query": "Where is the answer?", "attempts": 0}
+            return {
+                "relevant": True,
+                "hits": [{
+                    "content": "The answer is in the document.",
+                    "metadata": {"source_file": "paper.pdf", "page": 0},
+                    "similarity_score": 0.9,
+                }],
+            }
+
+    monkeypatch.setattr(rag, "_get_agentic_retrieval_graph", lambda: FakeGraph())
+
+    assert "paper.pdf, p.1" in rag.search_documents.invoke({"query": "Where is the answer?"})
+
+
+def test_search_documents_reports_web_fallback(monkeypatch):
+    from tools import rag
+
+    class FakeGraph:
+        def invoke(self, state):
+            return {
+                "relevant": False,
+                "web_results": "[https://example.test] fallback evidence",
+            }
+
+    monkeypatch.setattr(rag, "_get_agentic_retrieval_graph", lambda: FakeGraph())
+
+    result = rag.search_documents.invoke({"query": "Question"})
+
+    assert "Web fallback results" in result
+    assert "fallback evidence" in result

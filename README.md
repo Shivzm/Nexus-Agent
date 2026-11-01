@@ -135,6 +135,8 @@ uv run python -m evals.run_eval --config hybrid_rerank --count 30 --max-workers 
 
 `hybrid_rerank` reranks up to `rag_reranker_candidate_k` (20 by default) RRF candidates using `rag_reranker_model` (`cross-encoder/ms-marco-MiniLM-L-6-v2`). The model is downloaded on first use; set `RAG_RERANKER_MODEL` or `RAG_RERANKER_CANDIDATE_K` to override the defaults. Both configurations use the same reviewed set and answer/judge models for a fair comparison.
 
+Document-tool calls now grade retrieved passages, retry once with a rewritten query when evidence is weak, and use web search if the retry is still weak. Set `RAG_AGENTIC_MAX_REWRITES` to change the retry limit (default: `1`). The web fallback is clearly labelled in the tool result.
+
 ## Roadmap
 
 - [x] RAG pipeline on ChromaDB
@@ -142,7 +144,7 @@ uv run python -m evals.run_eval --config hybrid_rerank --count 30 --max-workers 
 - [ ] Hand-reviewed evaluation set and local LangSmith baseline
 - [x] Hybrid search (BM25 + dense, RRF)
 - [ ] Cross-encoder reranking benchmark (implementation available as `hybrid_rerank`)
-- [ ] Agentic retrieval: grade context, rewrite query, retry or fall back to web search
+- [x] Agentic retrieval: grade context, rewrite query, retry or fall back to web search
 - [ ] LangSmith tracing, latency and cost per query
 - [ ] FastAPI service, Docker, persistent checkpointer
 - [ ] Semantic cache and load test
