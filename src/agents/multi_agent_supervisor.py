@@ -95,7 +95,10 @@ def supervisor_agent(state: SupervisorState, llm) -> Dict:
     """
 
     messages = state["messages"]
-    task = messages[-1].content if messages else "No task provided"
+    task = state.get("current_task") or next(
+        (message.content for message in reversed(messages) if isinstance(message, HumanMessage)),
+        "No task provided",
+    )
 
     has_research = bool(state.get("research_data", ""))
     has_analysis = bool(state.get("analysis", ""))
@@ -382,7 +385,18 @@ def build_supervisor_graph(model: str | None = None, checkpointer=None):
 
         graph = build_supervisor_graph()
         from typing import cast
-        result = graph.invoke(cast(SupervisorState, {"messages": [HumanMessage(content="Research AI in healthcare")], "next_agent": "", "research_data": "", "analysis": "", "final_report": "", "task_complete": False, "current_task": ""}))
+        result = graph.invoke(
+            cast(SupervisorState, {
+                "messages": [HumanMessage(content="Research AI in healthcare")],
+                "next_agent": "",
+                "research_data": "",
+                "analysis": "",
+                "final_report": "",
+                "task_complete": False,
+                "current_task": "",
+            }),
+            config={"configurable": {"thread_id": "example"}},
+        )
         print(result["final_report"])
     """
 

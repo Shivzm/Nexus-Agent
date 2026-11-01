@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 
@@ -21,6 +22,11 @@ class Settings(BaseSettings):
     rag_chunk_size: int = 1000
     rag_chunk_overlap: int = 200
     rag_top_k: int = 5
+    # Initial cutoff for the L2-derived similarity score; calibrate with reviewed eval data.
+    rag_score_threshold: float = 0.5
+    rag_retrieval_config: Literal["dense", "hybrid"] = "dense"
+    rag_hybrid_candidate_k: int = 20
+    rag_rrf_k: int = 60
 
 
 settings = Settings()

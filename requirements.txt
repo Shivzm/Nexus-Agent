@@ -13,3 +13,4 @@ sentence-transformers
 pymupdf 
 langchain-text-splitters
 pydantic-settings
+rank-bm25>=0.2.2

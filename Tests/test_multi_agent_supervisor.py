@@ -170,8 +170,23 @@ class TestSupervisorAgent:
 
     def test_sets_current_task_from_last_message(self):
         llm   = mock_llm("researcher")
-        state = make_state(messages=[HumanMessage(content="AI in finance")])
+        state = make_state(messages=[HumanMessage(content="AI in finance")], current_task="")
         result = supervisor_agent(state, llm)
+        assert result["current_task"] == "AI in finance"
+
+    def test_preserves_task_after_agent_messages_are_appended(self):
+        llm = mock_llm("analyst")
+        state = make_state(
+            messages=[
+                HumanMessage(content="AI in finance"),
+                AIMessage(content="Research phase complete."),
+            ],
+            current_task="AI in finance",
+            research_data="Findings",
+        )
+
+        result = supervisor_agent(state, llm)
+
         assert result["current_task"] == "AI in finance"
 
     def test_returns_ai_message(self):
@@ -182,7 +197,7 @@ class TestSupervisorAgent:
 
     def test_handles_empty_messages(self):
         llm   = mock_llm("researcher")
-        state = make_state(messages=[])
+        state = make_state(messages=[], current_task="")
         result = supervisor_agent(state, llm)
         assert result["current_task"] == "No task provided"
 
@@ -235,7 +250,7 @@ class TestResearcherAgent:
         result = researcher_agent(state, llm)
         assert "research_data" in result
 
-    def test_researcher_executes_tool_calls_then_answers():
+    def test_researcher_executes_tool_calls_then_answers(self):
         call = AIMessage(content="", tool_calls=[{"name": "fake_search", "args": {"query": "x"}, "id": "1"}])
         llm = MagicMock()
         llm.bind_tools.return_value = llm
@@ -388,22 +403,15 @@ class TestFullWorkflow:
     def test_workflow_produces_final_report(self, mock_checkpointer, mock_get_llm):
         from langgraph.checkpoint.memory import MemorySaver
 
-        # Cycle: supervisor→researcher, researcher response,
-        #        supervisor→analyst,   analyst response,
-        #        supervisor→writer,    writer response,
-        #        supervisor→done
         responses = [
-            AIMessage(content="researcher"),          # supervisor decision 1
-            AIMessage(content="Detailed research."),  # researcher output
-            AIMessage(content="analyst"),             # supervisor decision 2
-            AIMessage(content="Deep analysis."),      # analyst output
-            AIMessage(content="writer"),              # supervisor decision 3
-            AIMessage(content="Executive report."),   # writer output
-            AIMessage(content="done"),                # supervisor decision 4
+            AIMessage(content="Detailed research."),
+            AIMessage(content="Deep analysis."),
+            AIMessage(content="Executive report."),
         ]
 
         llm      = MagicMock()
         llm.invoke.side_effect = responses
+        llm.bind_tools.return_value = llm
 
         mock_get_llm.return_value      = llm
         mock_checkpointer.return_value = MemorySaver()
@@ -420,7 +428,7 @@ class TestFullWorkflow:
             "current_task":  "",
         })
 
-        result = graph.invoke(initial)
+        result = graph.invoke(initial, config={"configurable": {"thread_id": "test-workflow"}})
 
         assert result["task_complete"] is True
         assert result["final_report"] != ""
@@ -434,17 +442,14 @@ class TestFullWorkflow:
         from langgraph.checkpoint.memory import MemorySaver
 
         responses = [
-            AIMessage(content="researcher"),
             AIMessage(content="Research on healthcare AI."),
-            AIMessage(content="analyst"),
             AIMessage(content="Analysis of healthcare AI."),
-            AIMessage(content="writer"),
             AIMessage(content="Report body."),
-            AIMessage(content="done"),
         ]
 
         llm             = MagicMock()
         llm.invoke.side_effect  = responses
+        llm.bind_tools.return_value = llm
         mock_get_llm.return_value      = llm
         mock_checkpointer.return_value = MemorySaver()
 
@@ -460,5 +465,5 @@ class TestFullWorkflow:
             "current_task":  "",
         })
 
-        result = graph.invoke(initial)
+        result = graph.invoke(initial, config={"configurable": {"thread_id": "test-topic"}})
         assert "AI in healthcare" in result["final_report"]
