@@ -1,4 +1,4 @@
-"""Run a local LangSmith evaluation of the dense retriever and answer pipeline."""
+"""Run a local LangSmith evaluation of a retriever configuration and answer pipeline."""
 
 import argparse
 import csv
@@ -92,7 +92,7 @@ def make_target(
     llm: Any,
     retrieve_fn: Callable[..., list[dict[str, Any]]] = retrieve,
     max_retries: int = 8,
-    search_config: Literal["dense", "hybrid"] = "dense",
+    search_config: Literal["dense", "hybrid", "hybrid_rerank"] = "dense",
     guard: RunGuard | None = None,
     fallback_k: int = 0,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
@@ -184,7 +184,7 @@ def run_evaluation(
     max_workers: int = 1,
     client: Any = None,
     retrieve_fn: Callable[..., list[dict[str, Any]]] = retrieve,
-    search_config: Literal["dense", "hybrid"] = "dense",
+    search_config: Literal["dense", "hybrid", "hybrid_rerank"] = "dense",
     judge_llm: Any = None,
     guard: RunGuard | None = None,
     fallback_k: int = 0,
@@ -193,7 +193,7 @@ def run_evaluation(
         raise ValueError("Use max_workers=1 to stay within the configured Groq TPM limit")
     if not cases:
         raise ValueError("Cannot evaluate an empty dataset")
-    if search_config not in ("dense", "hybrid"):
+    if search_config not in ("dense", "hybrid", "hybrid_rerank"):
         raise ValueError(f"Unsupported retrieval config: {search_config!r}")
 
     from langsmith import Client
@@ -239,7 +239,7 @@ def save_results(
     experiment: Any,
     output_dir: Path,
     model: str,
-    search_config: Literal["dense", "hybrid"] = "dense",
+    search_config: Literal["dense", "hybrid", "hybrid_rerank"] = "dense",
     fallback_k: int = 0,
 ) -> tuple[Path, Path, dict[str, Any]]:
     rows = list(experiment)
@@ -345,9 +345,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--count", type=int, default=30, help="Maximum number of questions to evaluate.")
     parser.add_argument(
         "--config",
-        choices=("dense", "hybrid"),
+        choices=("dense", "hybrid", "hybrid_rerank"),
         default="dense",
-        help="Retriever configuration to evaluate (default: dense).",
+        help="Retriever configuration: dense, hybrid, or hybrid_rerank (default: dense).",
     )
     parser.add_argument("--max-workers", type=int, default=1, help="Concurrent evaluations (must be 1).")
     parser.add_argument("--max-retries", type=int, default=8, help="Retry attempts for rate-limited Groq calls.")

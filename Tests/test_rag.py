@@ -1,5 +1,5 @@
 from config.settings import settings
-from src.rag import store
+from src.rag import reranker, store
 from src.rag.indexer import index_documents
 from src.rag.loader import load_documents
 from src.rag import retriever
@@ -51,6 +51,63 @@ def test_hybrid_retrieval_fuses_dense_and_bm25_rankings(monkeypatch):
     assert [hit["id"] for hit in hits] == ["both", "dense-only", "lexical-only"]
     assert hits[0]["metadata"]["source"] == "both.pdf"
     assert hits[0]["rrf_score"] > hits[1]["rrf_score"]
+
+
+def test_hybrid_rerank_resorts_fused_candidates(monkeypatch):
+    class FakeCollection:
+        def count(self):
+            return 3
+
+        def query(self, **kwargs):
+            return {
+                "ids": [["dense-only", "both"]],
+                "documents": [["semantic result", "overlapping result"]],
+                "metadatas": [[{"source": "dense.pdf"}, {"source": "both.pdf"}]],
+                "distances": [[0.1, 0.2]],
+            }
+
+    class FakeEmbedder:
+        def encode(self, queries):
+            class Embeddings(list):
+                def tolist(self):
+                    return list(self)
+
+            return Embeddings([[0.0]])
+
+    class FakeBM25:
+        def get_scores(self, tokens):
+            return [5.0, 4.0, 0.0]
+
+    class FakeReranker:
+        def predict(self, pairs):
+            assert [text for _, text in pairs] == [
+                "overlapping result",
+                "semantic result",
+                "lexical result",
+            ]
+            return [0.1, 0.9, 0.5]
+
+    bm25_index = (
+        FakeBM25(),
+        ["lexical-only", "both", "unmatched"],
+        ["lexical result", "overlapping result", "unmatched result"],
+        [{"source": "lexical.pdf"}, {"source": "both.pdf"}, {"source": "none.pdf"}],
+    )
+    monkeypatch.setattr(settings, "rag_hybrid_candidate_k", 20)
+    monkeypatch.setattr(settings, "rag_reranker_candidate_k", 20)
+    monkeypatch.setattr(settings, "rag_rrf_k", 60)
+    monkeypatch.setattr(settings, "rag_score_threshold", 0.5)
+    monkeypatch.setattr(settings, "rag_retrieval_config", "hybrid_rerank")
+    monkeypatch.setattr(retriever, "get_collection", FakeCollection)
+    monkeypatch.setattr(retriever, "get_embedder", FakeEmbedder)
+    monkeypatch.setattr(retriever, "get_bm25_index", lambda: bm25_index)
+    monkeypatch.setattr(reranker, "get_reranker", lambda: FakeReranker())
+
+    hits = retrieve("Exact term", top_k=2)
+
+    assert [hit["id"] for hit in hits] == ["dense-only", "lexical-only"]
+    assert [hit["rank"] for hit in hits] == [1, 2]
+    assert [hit["reranker_score"] for hit in hits] == [0.9, 0.5]
 
 
 def test_retrieve_uses_configured_relevance_threshold(monkeypatch):

@@ -24,9 +24,11 @@ class Settings(BaseSettings):
     rag_top_k: int = 5
     # Initial cutoff for the L2-derived similarity score; calibrate with reviewed eval data.
     rag_score_threshold: float = 0.5
-    rag_retrieval_config: Literal["dense", "hybrid"] = "dense"
+    rag_retrieval_config: Literal["dense", "hybrid", "hybrid_rerank"] = "dense"
     rag_hybrid_candidate_k: int = 20
     rag_rrf_k: int = 60
+    rag_reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    rag_reranker_candidate_k: int = 20
 
 
 settings = Settings()

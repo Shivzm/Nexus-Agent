@@ -126,13 +126,22 @@ uv run python -m evals.run_eval --config hybrid --count 30 --max-workers 1
 
 The hybrid configuration builds a cached BM25 index from the chunks in Chroma and fuses its ranking with dense retrieval using RRF. Re-run ingestion after changing documents; ingestion invalidates the in-process lexical index.
 
+Compare hybrid retrieval with and without cross-encoder reranking:
+
+```powershell
+uv run python -m evals.run_eval --config hybrid --count 30 --max-workers 1
+uv run python -m evals.run_eval --config hybrid_rerank --count 30 --max-workers 1
+```
+
+`hybrid_rerank` reranks up to `rag_reranker_candidate_k` (20 by default) RRF candidates using `rag_reranker_model` (`cross-encoder/ms-marco-MiniLM-L-6-v2`). The model is downloaded on first use; set `RAG_RERANKER_MODEL` or `RAG_RERANKER_CANDIDATE_K` to override the defaults. Both configurations use the same reviewed set and answer/judge models for a fair comparison.
+
 ## Roadmap
 
 - [x] RAG pipeline on ChromaDB
 - [x] RAG tool wired into the agents, with tool loops in the multi-agent graphs
 - [ ] Hand-reviewed evaluation set and local LangSmith baseline
 - [x] Hybrid search (BM25 + dense, RRF)
-- [ ] Cross-encoder reranking
+- [ ] Cross-encoder reranking benchmark (implementation available as `hybrid_rerank`)
 - [ ] Agentic retrieval: grade context, rewrite query, retry or fall back to web search
 - [ ] LangSmith tracing, latency and cost per query
 - [ ] FastAPI service, Docker, persistent checkpointer

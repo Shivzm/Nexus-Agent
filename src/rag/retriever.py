@@ -3,6 +3,7 @@ from typing import Literal
 
 from config.settings import settings
 from src.rag.lexical import get_bm25_index, tokenize
+from src.rag.reranker import rerank
 from src.rag.store import get_collection, get_embedder
 
 logger = logging.getLogger(__name__)
@@ -12,7 +13,7 @@ def retrieve(
     query: str,
     top_k: int | None = None,
     score_threshold: float | None = None,
-    search_config: Literal["dense", "hybrid"] | None = None,
+    search_config: Literal["dense", "hybrid", "hybrid_rerank"] | None = None,
 ) -> list[dict]:
     collection = get_collection()
     count = collection.count()
@@ -25,13 +26,13 @@ def retrieve(
 
     if search_config is None:
         search_config = settings.rag_retrieval_config
-    if search_config not in ("dense", "hybrid"):
+    if search_config not in ("dense", "hybrid", "hybrid_rerank"):
         raise ValueError(f"Unsupported retrieval config: {search_config!r}")
 
     result_count = top_k or settings.rag_top_k
     candidate_count = (
         min(settings.rag_hybrid_candidate_k, count)
-        if search_config == "hybrid"
+        if search_config != "dense"
         else min(result_count, count)
     )
     result = collection.query(
@@ -104,4 +105,6 @@ def retrieve(
         hit["rank"] = rank
         hit["rrf_score"] /= max_rrf_score
         hit["similarity_score"] = hit["rrf_score"]
+    if search_config == "hybrid_rerank":
+        return rerank(query, hits[:settings.rag_reranker_candidate_k], result_count)
     return hits[:result_count]
