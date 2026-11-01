@@ -2,7 +2,7 @@
 
 A multi-agent assistant that decides whether to answer from **your own documents** (retrieval over ChromaDB), from **the live web**, or by using other tools, and cites where its answer came from. It combines five LangGraph agent architectures with a document-retrieval pipeline.
 
-> **Status:** work in progress. The retrieval pipeline and agent wiring are in place; evaluation, hybrid search and observability are being added step by step. The results table below stays empty until each number comes from a real run (see `evals/results/`).
+> **Status:** work in progress. The retrieval pipeline and agent wiring are in place; evaluation, hybrid search, and observability are being added incrementally.
 
 ## Architecture
 
@@ -86,7 +86,7 @@ Measured on a fixed, hand-reviewed question set over the corpus in `data/docs/`.
 | + Cross-encoder reranker | – | – | – | – | – |
 | + Query rewriting and retry | – | – | – | – | – |
 
-The checked-in evaluation output is provisional: `reviewed_dataset.jsonl` is currently byte-identical to the generated draft, so inspect and correct it before treating its scores as a benchmark.
+The reviewed evaluation set is in `evals/reviewed_dataset.jsonl`, and excluded or duplicate cases are tracked in `evals/excluded_rows.jsonl`. The results table stays blank until benchmark scores are generated from this reviewed set.
 
 ## Building the evaluation question set
 

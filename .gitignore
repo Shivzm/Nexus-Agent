@@ -49,3 +49,5 @@ data/chroma/
 data/docs/*
 !data/docs/.gitkeep
 .venv-eval/
+*.patch
+evals/.llm_cache.sqlite

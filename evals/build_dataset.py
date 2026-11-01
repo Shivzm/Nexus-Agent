@@ -78,6 +78,48 @@ def select_chunks(chunks: list[Document], count: int, seed: int = 42) -> list[Do
     return selected
 
 
+class DailyLimitReached(RuntimeError):
+    """Groq's per-day quota is exhausted; sleeping and retrying will not help."""
+
+    def __init__(self, wait_seconds: float, detail: str = ""):
+        self.wait_seconds = wait_seconds
+        super().__init__(
+            f"Groq daily limit reached (resets in about {wait_seconds / 60:.0f} min). "
+            "Completed LLM calls are cached; rerun the same command after the reset. "
+            + detail
+        )
+
+
+# Waits longer than this on a *daily* limit mean sleeping is pointless: stop and resume later.
+DAILY_LIMIT_MAX_WAIT_SECONDS = 120.0
+
+
+def _error_message(error: RateLimitError) -> str:
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        message = body.get("error", {}).get("message", "")
+        if message:
+            return message
+    return str(error)
+
+
+def limit_kind(error: RateLimitError) -> str:
+    """Return 'TPM', 'TPD', 'RPM', 'RPD' or 'unknown' from Groq's error message."""
+    match = re.search(r"\((TPM|TPD|RPM|RPD)\)", _error_message(error))
+    return match.group(1) if match else "unknown"
+
+
+def _parse_wait(message: str) -> float | None:
+    """Parse 'try again in 2.5s', '250ms', '11m40.32s' or '1h2m3s' into seconds."""
+    match = re.search(r"try again in\s+((?:\d+(?:\.\d+)?\s*(?:ms|h|m|s)\s*)+)", message, flags=re.IGNORECASE)
+    if not match:
+        return None
+    total = 0.0
+    for value, unit in re.findall(r"(\d+(?:\.\d+)?)\s*(ms|h|m|s)", match.group(1), flags=re.IGNORECASE):
+        total += float(value) * {"ms": 0.001, "s": 1, "m": 60, "h": 3600}[unit.lower()]
+    return total
+
+
 def _rate_limit_delay(error: RateLimitError, attempt: int) -> float:
     delay = min(2**attempt, 60)
     response = getattr(error, "response", None)
@@ -89,14 +131,9 @@ def _rate_limit_delay(error: RateLimitError, attempt: int) -> float:
             except ValueError:
                 pass
 
-    body = getattr(error, "body", None)
-    message = body.get("error", {}).get("message", "") if isinstance(body, dict) else ""
-    match = re.search(r"try again in ([\d.]+)\s*(ms|s)", message, flags=re.IGNORECASE)
-    if match:
-        seconds = float(match.group(1))
-        if match.group(2).lower() == "ms":
-            seconds /= 1000
-        delay = max(delay, seconds)
+    parsed = _parse_wait(_error_message(error))
+    if parsed is not None:
+        delay = max(delay, parsed)
     return delay
 
 
@@ -106,19 +143,22 @@ def invoke_with_rate_limit_retry(
     max_retries: int = 8,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> Any:
-    """Retry Groq TPM rate limits with bounded exponential backoff."""
+    """Retry Groq per-minute limits with backoff; fail fast on per-day limits."""
     for attempt in range(max_retries + 1):
         try:
             return llm.invoke(prompt)
         except RateLimitError as exc:
+            delay = _rate_limit_delay(exc, attempt)
+            kind = limit_kind(exc)
+            if kind in ("TPD", "RPD") or (kind == "unknown" and delay > DAILY_LIMIT_MAX_WAIT_SECONDS):
+                raise DailyLimitReached(delay, _error_message(exc)[:300]) from exc
             if attempt == max_retries:
                 raise RuntimeError(
                     f"Groq rate limit persisted after {max_retries} retries; "
                     "wait for the TPM window to reset and rerun the command."
                 ) from exc
-            delay = _rate_limit_delay(exc, attempt)
             print(
-                f"Groq rate limit reached; retrying in {delay:.1f}s "
+                f"Groq {kind} limit reached; retrying in {delay:.1f}s "
                 f"({attempt + 1}/{max_retries})",
                 flush=True,
             )
