@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    env_file:
+      - .env
+    environment:
+      API_CHECKPOINT_DB: /app/data/api_checkpoints.sqlite
+      RAG_CHROMA_DIR: /app/data/chroma
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
