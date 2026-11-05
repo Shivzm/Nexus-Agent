@@ -218,6 +218,20 @@ curl.exe -N -X POST http://127.0.0.1:8000/chat/stream `
 
 For any non-local deployment, set `API_BEARER_TOKEN` in `.env`, use HTTPS behind a trusted reverse proxy, and restrict access to the SQLite and Chroma data. Traces and request data may contain sensitive content; keep LangSmith tracing disabled unless that data may be sent there.
 
+## Semantic cache and load testing
+
+The API semantic response cache is **disabled by default**. Enable it only for a trusted, single-tenant deployment by setting `API_SEMANTIC_CACHE_ENABLED=true`; cache hits are reported in the `X-Semantic-Cache` response header. It uses the local embedding model, a default cosine-similarity threshold of `0.96`, and a 2,000-entry cap. Only stateless requests are eligible; multi-turn conversations and requests using web results bypass caching. Reingestion clears cached answers. Responses are shared across cache-enabled API clients, so do not enable this on a multi-tenant deployment without adding tenant isolation.
+
+Install the optional load-test dependencies and start the API first:
+
+```powershell
+uv sync --group load
+docker compose up --build
+uv run --group load locust -f locustfile.py --host http://127.0.0.1:8000 --headless -u 5 -r 1 -t 2m
+```
+
+The Locust profile exercises JSON and streaming requests, uses unique thread IDs, and labels `/chat` and `/chat/stream` statistics by semantic-cache hit/miss status. It repeats a small default question pool to measure cache reuse; set `LOAD_TEST_QUESTIONS` to a JSON list, `LOAD_TEST_PACING_SECONDS` to adjust per-user pacing, and `API_BEARER_TOKEN` if required. Test against a controlled deployment: uncached requests invoke real models and tools, consume provider quota, and can affect production state. Locust's latency figures include end-to-end response latency; use the trace reporter for per-node detail.
+
 ## Roadmap
 
 - [x] RAG pipeline on ChromaDB
@@ -230,8 +244,10 @@ For any non-local deployment, set `API_BEARER_TOKEN` in `.env`, use HTTPS behind
 - [x] Agent-level tool-selection and task-success evaluation
 - [x] Opt-in LangSmith tracing and latency/token/cost reports by query and node
 - [x] FastAPI service, Docker, persistent SQLite checkpointer
-- [ ] Semantic cache and load test
-- [ ] CI check that fails when retrieval quality drops
+- [x] Opt-in semantic response cache and Locust load-test profile
+- [x] CI retrieval-quality gate with hit@5 and MRR thresholds
+
+The GitHub Actions retrieval-quality gate uses a small committed synthetic corpus and the production dense retriever/embedding model. It makes no LLM calls and does not require the private `data/docs/` corpus or API keys. The gate currently requires hit@5 >= 0.75 and MRR >= 0.50; run it locally with `uv run python -m evals.run_retrieval_gate`. This is a regression smoke test, not a substitute for evaluation on the full reviewed corpus.
 
 ## Tech stack
 

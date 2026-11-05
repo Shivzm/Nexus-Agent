@@ -10,12 +10,14 @@ from pathlib import Path
 from typing import Any, Iterator, Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.sqlite import SqliteSaver
 from pydantic import BaseModel, Field
 
+from config.settings import settings
 from src.agents.react_agent import build_react_agent
+from src.rag.semantic_cache import SemanticResponseCache
 
 logger = logging.getLogger(__name__)
 SOURCE_PATTERN = re.compile(r"\[\d+\]\s+(.+?),\s+p\.(\d+)")
@@ -77,6 +79,7 @@ def _authorize(authorization: Annotated[str | None, Header()] = None) -> None:
 def create_app(
     checkpoint_path: Path | None = None,
     graph_factory=build_react_agent,
+    cache_factory=None,
 ) -> FastAPI:
     db_path = checkpoint_path or Path(os.getenv("API_CHECKPOINT_DB", "data/api_checkpoints.sqlite"))
 
@@ -85,6 +88,13 @@ def create_app(
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SqliteSaver.from_conn_string(str(db_path)) as checkpointer:
             app.state.graph = graph_factory(checkpointer=checkpointer)
+            app.state.semantic_cache = (
+                cache_factory()
+                if cache_factory is not None
+                else _create_semantic_cache()
+                if settings.api_semantic_cache_enabled
+                else None
+            )
             yield
 
     app = FastAPI(
@@ -102,13 +112,21 @@ def create_app(
     def chat(
         request: ChatRequest,
         _: Annotated[None, Depends(_authorize)],
-    ) -> dict[str, Any]:
+    ) -> JSONResponse:
         config = {"configurable": {"thread_id": request.thread_id}}
+        cached, cache_status = _get_cache_hit(app, request, config)
+        if cached is not None:
+            cached["thread_id"] = request.thread_id
+            cached.pop("cache_similarity", None)
+            return JSONResponse(cached, headers={"X-Semantic-Cache": cache_status})
         state = app.state.graph.invoke(
             {"messages": [HumanMessage(content=request.question)]},
             config=config,
         )
-        return _response_from_state(state, request.thread_id)
+        response = _response_from_state(state, request.thread_id)
+        if _is_cacheable(state):
+            _put_cache_entry(app, request.question, response)
+        return JSONResponse(response, headers={"X-Semantic-Cache": cache_status})
 
     @app.post("/chat/stream")
     def chat_stream(
@@ -116,8 +134,15 @@ def create_app(
         _: Annotated[None, Depends(_authorize)],
     ) -> StreamingResponse:
         config = {"configurable": {"thread_id": request.thread_id}}
+        cached, cache_status = _get_cache_hit(app, request, config)
 
         def events() -> Iterator[str]:
+            if cached is not None:
+                cached.pop("cache_similarity", None)
+                cached["thread_id"] = request.thread_id
+                yield f"event: token\ndata: {json.dumps({'text': cached['answer']}, ensure_ascii=False)}\n\n"
+                yield f"event: done\ndata: {json.dumps(cached, ensure_ascii=False)}\n\n"
+                return
             for update in app.state.graph.stream(
                 {"messages": [HumanMessage(content=request.question)]},
                 config=config,
@@ -131,15 +156,76 @@ def create_app(
                                 yield f"event: token\ndata: {json.dumps({'text': text}, ensure_ascii=False)}\n\n"
             state = app.state.graph.get_state(config).values
             result = _response_from_state(state, request.thread_id)
+            if _is_cacheable(state):
+                _put_cache_entry(app, request.question, result)
             yield f"event: done\ndata: {json.dumps(result, ensure_ascii=False)}\n\n"
 
         return StreamingResponse(
             events(),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "X-Semantic-Cache": cache_status,
+            },
         )
 
     return app
+
+
+def _create_semantic_cache() -> SemanticResponseCache:
+    from src.rag.store import get_embedder
+
+    cache_namespace = "|".join((
+        "semantic-response-v1",
+        settings.rag_collection,
+        settings.rag_embedding_model,
+        settings.rag_retrieval_config,
+        settings.react_model,
+        settings.default_model,
+        settings.rag_reranker_model,
+        str(settings.rag_score_threshold),
+    ))
+    return SemanticResponseCache(
+        path=settings.api_semantic_cache_db,
+        embed=lambda text: get_embedder().encode([text])[0].tolist(),
+        namespace=cache_namespace,
+        threshold=settings.api_semantic_cache_threshold,
+        max_entries=settings.api_semantic_cache_max_entries,
+    )
+
+
+def _get_cache_hit(
+    app: FastAPI,
+    request: ChatRequest,
+    config: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str]:
+    cache = getattr(app.state, "semantic_cache", None)
+    if cache is None:
+        return None, "disabled"
+    current = app.state.graph.get_state(config).values
+    if current.get("messages"):
+        return None, "bypass"
+    response = cache.get(request.question)
+    return response, "hit" if response is not None else "miss"
+
+
+def _is_cacheable(state: dict[str, Any]) -> bool:
+    for message in state.get("messages", []):
+        if any(call.get("name") == "search_web" for call in getattr(message, "tool_calls", [])):
+            return False
+        if (
+            isinstance(message, ToolMessage)
+            and "Web fallback results" in _text_content(message.content)
+        ):
+            return False
+    return True
+
+
+def _put_cache_entry(app: FastAPI, question: str, response: dict[str, Any]) -> None:
+    cache = getattr(app.state, "semantic_cache", None)
+    if cache is not None:
+        cache.put(question, response)
 
 
 app = create_app()

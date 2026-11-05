@@ -119,3 +119,119 @@ def test_chat_requires_configured_bearer_token(tmp_path: Path, monkeypatch):
 
     assert unauthorized.status_code == 401
     assert authorized.status_code == 200
+
+
+def test_semantic_cache_serves_stateless_hits_without_running_agent(tmp_path: Path):
+    class FakeCache:
+        def __init__(self):
+            self.responses = {}
+            self.lookups = []
+
+        def get(self, question):
+            self.lookups.append(question)
+            return self.responses.get(question)
+
+        def put(self, question, response):
+            self.responses[question] = response
+
+    cache = FakeCache()
+    graph_calls = []
+
+    def graph_factory(checkpointer):
+        graph = build_test_graph(checkpointer)
+        original_invoke = graph.invoke
+
+        def counted_invoke(*args, **kwargs):
+            graph_calls.append(args[0])
+            return original_invoke(*args, **kwargs)
+
+        graph.invoke = counted_invoke
+        return graph
+
+    app = create_app(
+        tmp_path / "semantic.sqlite",
+        graph_factory=graph_factory,
+        cache_factory=lambda: cache,
+    )
+
+    with TestClient(app) as client:
+        first = client.post(
+            "/chat",
+            json={"thread_id": "first-thread", "question": "repeat this"},
+        )
+        second = client.post(
+            "/chat",
+            json={"thread_id": "second-thread", "question": "repeat this"},
+        )
+
+    assert first.headers["x-semantic-cache"] == "miss"
+    assert second.headers["x-semantic-cache"] == "hit"
+    assert first.json()["answer"] == second.json()["answer"] == "answer-1"
+    assert len(graph_calls) == 1
+
+
+def test_semantic_cache_bypasses_existing_conversation_history(tmp_path: Path):
+    class FakeCache:
+        def __init__(self):
+            self.lookups = []
+            self.puts = []
+
+        def get(self, question):
+            self.lookups.append(question)
+            return None
+
+        def put(self, question, response):
+            self.puts.append(question)
+
+    cache = FakeCache()
+    app = create_app(
+        tmp_path / "conversation.sqlite",
+        graph_factory=build_test_graph,
+        cache_factory=lambda: cache,
+    )
+
+    with TestClient(app) as client:
+        first = client.post(
+            "/chat",
+            json={"thread_id": "conversation", "question": "first"},
+        )
+        second = client.post(
+            "/chat",
+            json={"thread_id": "conversation", "question": "second"},
+        )
+
+    assert first.headers["x-semantic-cache"] == "miss"
+    assert second.headers["x-semantic-cache"] == "bypass"
+    assert second.json()["answer"] == "answer-2"
+    assert cache.lookups == ["first"]
+    assert cache.puts == ["first", "second"]
+
+
+def test_streaming_semantic_cache_hit_replays_result(tmp_path: Path):
+    class FakeCache:
+        def get(self, question):
+            return {
+                "thread_id": "prior-thread",
+                "answer": "cached response",
+                "sources": [{"source": "paper.pdf", "page": 3}],
+            }
+
+        def put(self, question, response):
+            raise AssertionError("Cache hits must not be written back")
+
+    app = create_app(
+        tmp_path / "stream-cache.sqlite",
+        graph_factory=build_test_graph,
+        cache_factory=FakeCache,
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/chat/stream",
+            json={"thread_id": "stream-thread", "question": "cached question"},
+        )
+
+    assert response.headers["x-semantic-cache"] == "hit"
+    assert 'event: token\ndata: {"text": "cached response"}' in response.text
+    assert '"thread_id": "stream-thread"' in response.text
+    assert '"page": 3' in response.text

@@ -148,9 +148,15 @@ def test_retrieve_finds_relevant_chunk(tmp_path, monkeypatch):
 
     monkeypatch.setattr(settings, "rag_docs_dir", str(docs))
     monkeypatch.setattr(settings, "rag_chroma_dir", str(tmp_path / "chroma"))
+    invalidated = []
+    monkeypatch.setattr(
+        "src.rag.indexer.clear_semantic_cache",
+        lambda path: invalidated.append(path),
+    )
     store.get_collection.cache_clear()
 
     index_documents(load_documents())
+    assert invalidated == [settings.api_semantic_cache_db]
     hits = retrieve("Where is the Eiffel Tower?", top_k=1)
     assert "Paris" in hits[0]["content"]
 

@@ -5,6 +5,7 @@ services:
       - .env
     environment:
       API_CHECKPOINT_DB: /app/data/api_checkpoints.sqlite
+      API_SEMANTIC_CACHE_DB: /app/data/semantic_cache.sqlite
       RAG_CHROMA_DIR: /app/data/chroma
     ports:
       - "127.0.0.1:8000:8000"

@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     rag_reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     rag_reranker_candidate_k: int = 20
     rag_agentic_max_rewrites: int = 1
+    api_semantic_cache_enabled: bool = False
+    api_semantic_cache_db: str = "data/semantic_cache.sqlite"
+    api_semantic_cache_threshold: float = 0.96
+    api_semantic_cache_max_entries: int = 2000
 
 
 settings = Settings()

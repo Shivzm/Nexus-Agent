@@ -4,6 +4,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from config.settings import settings
 from src.rag.lexical import clear_bm25_index
+from src.rag.semantic_cache import clear_semantic_cache
 from src.rag.store import get_collection, get_embedder
 
 
@@ -41,4 +42,5 @@ def index_documents(documents) -> int:
         if stale:
             collection.delete(ids=list(stale))
     clear_bm25_index()
+    clear_semantic_cache(settings.api_semantic_cache_db)
     return len(chunks)
