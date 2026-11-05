@@ -1,40 +1,74 @@
 # Nexus-Agent: an agentic RAG system built with LangGraph
 
-A multi-agent assistant that decides whether to answer from **your own documents** (retrieval over ChromaDB), from **the live web**, or by using other tools, and cites where its answer came from. It combines five LangGraph agent architectures with a document-retrieval pipeline.
+A research assistant that can answer from an indexed document collection, search the web, or call other tools. The repository includes five LangGraph agent modes, a retrieval pipeline with optional hybrid search and reranking, and a streaming HTTP API.
 
-> **Status:** work in progress. The retrieval pipeline and agent wiring are in place; evaluation, hybrid search, and observability are being added incrementally.
+> **Status:** Core agent, retrieval, API, and deployment paths are implemented. The roadmap below tracks remaining work.
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-    U[User / CLI] --> A["LangGraph agent<br/>react · multi · supervisor"]
-    A -->|"questions about my documents"| D[search_documents]
-    A -->|"current events"| W[search_web]
-    A -->|"other tools"| O[multiply · write_summary · human_assistance]
-    D --> R[Retriever] --> C[(ChromaDB)]
-    I["Ingest<br/>load → chunk → embed"] --> C
-    P[PDFs and text files] --> I
+flowchart TB
+    U[User] --> CLI[CLI]
+    U --> API[FastAPI]
+    CLI --> MODE["Select one of five graphs"]
+    API --> REACT["ReAct graph<br/>SQLite checkpointer"]
+    MODE --> CHATBOT["chatbot"]
+    MODE --> HIL["human_in_loop"]
+    MODE --> MULTI["multi<br/>researcher → writer"]
+    MODE --> SUP["supervisor<br/>researcher / analyst / writer"]
+    MODE --> REACT
+    CHATBOT --> ANSWER
+    MULTI --> MULTIWRITER["Writer creates final response"] --> ANSWER
+    SUP --> SUPWRITER["Supervisor routes to final writer"] --> ANSWER
+
+    REACT --> DOCS["search_documents"]
+    REACT --> WEB["search_web"]
+    REACT --> MATH["multiply"]
+    HIL --> WEB
+    HIL --> HUMAN["human_assistance"]
+    MULTI --> DOCS
+    MULTI --> WEB
+    SUP --> SUPRESEARCH["Researcher tool loop<br/>up to four rounds"]
+    SUPRESEARCH --> DOCS
+    SUPRESEARCH --> WEB
+    DOCS --> RETRIEVE["Dense retrieval<br/>or hybrid BM25 + dense / RRF<br/>optional cross-encoder rerank"]
+    RETRIEVE --> CHROMA[(ChromaDB)]
+    RETRIEVE --> GRADE["Grade retrieved evidence"]
+    GRADE -->|Sufficient| ANSWER[Agent answer]
+    GRADE -->|Weak: rewrite and retry once| RETRIEVE
+    GRADE -->|Still weak| FALLBACK["Tavily web fallback"]
+    WEB --> ANSWER
+    FALLBACK --> ANSWER
+    MATH --> ANSWER
+    HUMAN --> ANSWER
+
+    FILES["PDF and TXT files"] --> INGEST["Load → chunk → embed"]
+    INGEST --> CHROMA
 ```
+
+The CLI can select `react`, `chatbot`, `human_in_loop`, `multi` (researcher then writer), or `supervisor` (supervisor routes among researcher, analyst, and writer). The FastAPI endpoints currently expose the ReAct graph. CLI graph state is in memory; API conversation state is persisted in SQLite by `thread_id`.
 
 ## What is implemented
 
-- **Five agent modes** (`--agent`): `react`, `chatbot`, `human_in_loop`, `multi` (researcher → writer), `supervisor` (supervisor → researcher / analyst / writer).
-- **Tool loops:** the researcher in `multi` and `supervisor` calls tools (`search_documents`, `search_web`) before writing; the supervisor loop is capped at 4 rounds.
-- **RAG pipeline** (`src/rag/`): PDF and text loading, recursive chunking (1000 / 200), sentence-transformers embeddings (`all-MiniLM-L6-v2`), idempotent upserts into ChromaDB with stale-chunk cleanup, and retrieval that returns the file, page and score of every chunk.
-- **Hybrid retrieval:** optional BM25 plus dense retrieval combined with Reciprocal Rank Fusion; dense remains the default (`rag_retrieval_config=dense`).
-- **Human-in-the-loop**, conversation memory (in-process checkpointer), and tests under `Tests/`.
+- **Agent modes and tool use:** the ReAct and multi-agent researcher graphs can call tools; the supervisor's researcher can call tools for up to four rounds. The other graphs provide a basic chatbot and a human-assistance interrupt workflow.
+- **Document ingestion and RAG** (`src/rag/`): recursive PDF/TXT loading and chunking (1000 characters with 200 overlap), `all-MiniLM-L6-v2` embeddings, ChromaDB upserts with stale-chunk cleanup, and source/page metadata.
+- **Retrieval modes:** dense is the default; `hybrid` combines BM25 and dense rankings with Reciprocal Rank Fusion, and `hybrid_rerank` reranks fused candidates with a cross-encoder.
+- **Agentic document retrieval:** retrieved passages are graded for relevance; weak evidence triggers a rewritten-query retry, then Tavily web fallback if still weak.
+- **API and persistence:** FastAPI `/chat`, `/chat/stream` (SSE), and `/health` endpoints; SQLite-backed graph checkpoints; optional bearer-token protection.
+- **Observability:** opt-in LangSmith tracing and trace reports for latency, tokens, and cost.
+- **Containerization:** Dockerfile and Docker Compose configuration for the API.
+- **Tests:** pytest tests are under `Tests/`.
 
 ## Quick start (Windows PowerShell)
 
 ```powershell
-git clone https://github.com/Shivzm/Nexus-Agent.git
-cd Nexus-Agent
+git clone https://github.com/Shivzm/Basic-Chatbot.git
+cd Basic-Chatbot
 uv sync
 
 copy .env.example .env        # then put your GROQ_API_KEY and TAVILY_API_KEY in .env
 
-# 1. get documents into data/docs/  (your own PDFs/.txt files, and/or the sample corpus:)
+# 1. Get documents into data/docs/ (your own PDFs/.txt files, or the sample corpus:)
 uv run python -m src.scripts.download_corpus
 
 # 2. build the vector database (creates data/chroma/)
@@ -50,30 +84,23 @@ The first ingest downloads the embedding model. Run the tests with `uv run pytes
 ## Project layout
 
 ```
-config/settings.py        settings and .env loading
-src/agents/               the five LangGraph agents
-src/rag/                  loader, indexer, Chroma store, retriever
-src/scripts/              ingest.py, download_corpus.py
+api/                      FastAPI app and SQLite-backed chat API
+config/                   settings and .env loading
+src/agents/               five LangGraph agent graphs
+src/rag/                  ingestion, Chroma store, retrieval, reranker, grading/retry
+src/scripts/              corpus download and ingestion commands
+tools/                    document/web search, math, human assistance, summary
 evals/                    draft question-set generator
-tools/                    search_documents, search_web, multiply, ...
 Tests/                    pytest suite
-data/docs/                your documents (not committed)
-data/chroma/              the vector database (generated, not committed)
+data/docs/                local PDF/TXT corpus (not committed)
+data/chroma/              generated vector index (not committed)
+data/api_checkpoints.sqlite  persistent API conversation checkpoints (generated)
+Dockerfile / docker-compose.yml  containerized API deployment
 ```
 
-## Issues Faced
+## Issue write-up
 
-Our question was fine. The request was too big for your Groq limit.
-
-What happened ?
-
-Groq returned a 413 saying the request was 8,105 tokens against a limit of 8,000 tokens per minute for openai/gpt-oss-120b. That limit applies to your organization on Groq’s free tier. The agent re-sends the entire conversation on every call, and thread 1 still held your first question and its answer, the passages from all three search_documents calls, and now the new web results. Every question makes the next one bigger.
-
-Solution ?
-
-Drop old tool output from the prompt
-
-Old retrieved passages and web results are bulky, and the model doesn’t need them again once it has answered.
+The Groq request-size issue, investigation, and implemented conversation-history compaction are documented in [ISSUES_AND_SOLUTIONS.md](./ISSUES_AND_SOLUTIONS.md).
 
 ## Results
 
@@ -116,6 +143,16 @@ uv run python -m evals.run_eval --count 30 --max-workers 1 --max-retries 8
 ```
 
 The runner uses the existing LangSmith SDK locally (`upload_results=False`), so evaluation inputs and results are not uploaded to LangSmith. Groq still receives the answer-generation and judge prompts. Evaluation concurrency is fixed to one worker; rate-limited Groq calls retry with backoff. The score sheet includes document-level hit@5/MRR and custom LLM-judge estimates for faithfulness, context recall, and context precision. These judge scores are not Ragas metric implementations.
+
+Run the separate Ragas baseline in its own project environment. It uses the same reviewed questions, dense retriever, answer model, and top-5 cutoff, then reports hit@5, MRR, Ragas faithfulness, context recall, and context precision:
+
+```powershell
+$env:UV_PROJECT_ENVIRONMENT = ".venv-eval"
+uv sync --group ragas --no-dev
+uv run --group ragas python -m evals.run_ragas_eval --count 30 --max-retries 8
+```
+
+Set `EVAL_MODEL` to override the default `openai/gpt-oss-20b`; `GROQ_API_KEY` must be available through `.env` or the environment. The runner writes aggregate JSON and per-question CSV files under `evals/results/`. Ragas sends prompts, retrieved passages, answers, and references to the configured model provider for judging. The local `data/chroma/` index must already contain the corpus; the runner does not ingest documents. Ragas metric values are model-judged estimates and are not directly interchangeable with scores from the custom LangSmith baseline.
 
 Compare dense and hybrid retrieval against the same reviewed set:
 
@@ -198,4 +235,4 @@ For any non-local deployment, set `API_BEARER_TOKEN` in `.env`, use HTTPS behind
 
 ## Tech stack
 
-Python 3.13, LangGraph, LangChain, Groq (Llama 3), ChromaDB, sentence-transformers, PyMuPDF, Tavily, pytest, uv.
+Python 3.13 (project supports Python 3.11–3.13), LangGraph, LangChain, Groq (`openai/gpt-oss-20b` / `openai/gpt-oss-120b` defaults), FastAPI, Uvicorn, SQLite checkpointer, ChromaDB, sentence-transformers (`all-MiniLM-L6-v2` embeddings and an MS MARCO cross-encoder reranker), BM25 (`rank-bm25`), PyMuPDF, Tavily, LangSmith, pytest, and uv. Ragas is an optional dependency group for the isolated evaluation environment; Docker is used for API packaging.
