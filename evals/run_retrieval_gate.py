@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
-from evals.run_eval import load_cases
+from evals.dataset import load_cases
 
 DEFAULT_DATASET = Path("evals/ci_retrieval_dataset.jsonl")
 
