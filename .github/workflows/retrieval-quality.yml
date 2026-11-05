@@ -1,0 +1,32 @@
+name: Retrieval quality
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retrieval-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/huggingface
+          key: ${{ runner.os }}-retrieval-model-all-minilm-l6-v2
+      - name: Install project
+        run: uv sync --locked --no-dev
+      - name: Check retrieval quality
+        env:
+          HF_HOME: ${{ runner.temp }}/huggingface
+        run: uv run python -m evals.run_retrieval_gate --min-hit-at-5 0.75 --min-mrr 0.50
